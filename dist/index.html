@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8">
+  <title>CodePen - Performance Test - Frametime, pFPS, FPS</title>
+  
+
+</head>
+<body>
+<!-- partial:index.partial.html -->
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>
+    JS API Benchmark Test v0.1.0
+  </title>
+
+  <style>
+    html,
+    body,
+    #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
+
+    #test-results-info {
+      padding: 14px;
+      border-radius: 5px;
+      display: none;
+    }
+
+    #test-complete-info {
+      padding: 14px;
+      border-radius: 5px;
+    }
+
+    .action-btn {
+      position: relative;
+      float: left;
+      height: 40px;
+      margin: 6px;
+      font-size: large;
+      font-weight: bold;
+    }
+
+    .action-select {
+      position: relative;
+      float: left;
+      margin: 6px;
+      height: 40px;
+      font-size: medium;
+      font-weight: bold;
+    }
+
+    #billboard-info {
+      position: relative;
+      float: left;
+      font-family: Arial, Helvetica, sans-serif;
+      text-align: center;
+      margin: 6px;
+      height: 20px;
+      line-height: 20px;
+      padding: 14px;
+      border-radius: 5px;
+    }
+
+    #instructionsDiv {
+      position: absolute;
+      top: 60px;
+      left: 60px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: large;
+    }
+
+    #browser-size {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+
+  <link rel="stylesheet" href="https://js.arcgis.com/4.27/esri/themes/light/main.css" />
+
+  <script src="https://js.arcgis.com/4.27/"></script>
+
+  <script type="module">
+
+    const frameTimes = [];
+    let START_TIME;
+    const VIEW_ANIMATION_PATTERN_DELAY = 1000 * 6.5; //ms
+    const MIN_VIEW_ANIMATION_PATTERN_DELAY = 1000 * 3; //ms      
+    let basemap = "streets-vector";
+    let fps;                        // Frames per second (FPS)
+    let fpsAvg = [];                // FPS average
+    let fpsRunningArr = [];
+    let minRun = false;             // Check for min or max run configuration
+    let totalTime;
+    let totalRuntime;
+    let stopTimer = false;
+    let lastTimestamp = 0;
+    const arrAvg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+    const sdkVersion = document.getElementById("sdk-version");
+    const basemapTypePulldown = document.getElementById("basemap-select");
+    const dutyCyclePulldown = document.getElementById("duty-cycle-select");
+    const billboardInfoDiv = document.getElementById("billboard-info");
+    const testStatusDiv = document.getElementById("test-status");
+    const startBtn = document.getElementById("start-btn");
+    startBtn.onclick = () => {
+      const basemapValue = basemapTypePulldown.options[basemapTypePulldown.selectedIndex].value;
+      basemapValue === "raster" ? basemap = "streets" : basemap = "streets-vector";
+
+      const checkForMin = dutyCyclePulldown.options[dutyCyclePulldown.selectedIndex].value;
+      checkForMin === "min" ? minRun = true : minRun = false;
+
+      main();
+    }
+    const screensizeDiv = document.getElementById("screen-size");
+    const averageDiv = document.getElementById("frame-avg");
+    const highestDiv1 = document.getElementById("frame-highest1");
+    const highestDiv5 = document.getElementById("frame-highest5");
+    const highestDiv10 = document.getElementById("frame-highest10");
+    const highestDiv25 = document.getElementById("frame-highest25");
+    const highestDiv50 = document.getElementById("frame-highest50");
+
+    const averageFpsDiv = document.getElementById("fps-avg");
+    const highestFpsDiv1 = document.getElementById("fps-highest1");
+    const highestFpsDiv5 = document.getElementById("fps-highest5");
+    const highestFpsDiv10 = document.getElementById("fps-highest10");
+    const highestFpsDiv25 = document.getElementById("fps-highest25");
+    const highestFpsDiv50 = document.getElementById("fps-highest50");
+
+    const averageResponseDiv = document.getElementById("response-avg");
+    const totalRuntimeDiv = document.getElementById("runtime-total");
+    const httpRequestCountDiv = document.getElementById("https-request-count");
+
+    const analyzeFPS = () => {
+      console.log("Sorting", frameTimes.length,)
+
+      const firstSort = frameTimes.sort((a, b) => {
+        return a - b;
+      });
+
+      /* console.log("SORT",firstSort)l; */
+
+      let framesPerSecond = [];
+
+      let currDuration = 0;
+      let currFrameCount = 0;
+
+      for (let i = 0; i < frameTimes.length; i++) {
+        const duration = frameTimes[i];
+
+        currDuration += duration;
+        currFrameCount += 1;
+
+        if (currDuration >= 1000) {
+          framesPerSecond.push(currFrameCount / (currDuration / 1000.));
+
+          currDuration = 0;
+          currFrameCount = 0;
+        }
+      }
+
+      framesPerSecond = framesPerSecond.sort((a, b) => {
+        return b - a;
+      });
+
+      // Get the distribution of slowest frames
+      const countP1 = Math.ceil(frameTimes.length * .01);
+      const countP5 = Math.ceil(frameTimes.length * .05);
+      const countP10 = Math.ceil(frameTimes.length * .1);
+      const countP25 = Math.ceil(frameTimes.length * .25);
+      const countP50 = Math.ceil(frameTimes.length * .5);
+      const frameTimesP1 = frameTimes.slice(frameTimes.length - countP1, frameTimes.length);
+      const frameTimesP5 = frameTimes.slice(frameTimes.length - countP5, frameTimes.length);
+      const frameTimesP10 = frameTimes.slice(frameTimes.length - countP10, frameTimes.length);
+      const frameTimesP25 = frameTimes.slice(frameTimes.length - countP25, frameTimes.length);
+      const frameTimesP50 = frameTimes.slice(frameTimes.length - countP50, frameTimes.length);
+      const highestFrameTime1Percent = arrAvg(frameTimesP1)
+      const highestFrameTime5Percent = arrAvg(frameTimesP5)
+      const highestFrameTime10Percent = arrAvg(frameTimesP10)
+      const highestFrameTime25Percent = arrAvg(frameTimesP25)
+      const highestFrameTime50Percent = arrAvg(frameTimesP50)
+
+      const countFpsP1 = Math.ceil(framesPerSecond.length * .01);
+      const countFpsP5 = Math.ceil(framesPerSecond.length * .05);
+      const countFpsP10 = Math.ceil(framesPerSecond.length * .1);
+      const countFpsP25 = Math.ceil(framesPerSecond.length * .25);
+      const countFpsP50 = Math.ceil(framesPerSecond.length * .5);
+
+      const fpsP1 = framesPerSecond.slice(framesPerSecond.length - countFpsP1, framesPerSecond.length);
+      const fpsP5 = framesPerSecond.slice(framesPerSecond.length - countFpsP5, framesPerSecond.length);
+      const fpsP10 = framesPerSecond.slice(framesPerSecond.length - countFpsP10, framesPerSecond.length);
+      const fpsP25 = framesPerSecond.slice(framesPerSecond.length - countFpsP25, framesPerSecond.length);
+      const fpsP50 = framesPerSecond.slice(framesPerSecond.length - countFpsP50, framesPerSecond.length);
+
+      const avgFpsP1 = arrAvg(fpsP1);
+      const avgFpsP5 = arrAvg(fpsP5);
+      const avgFpsP10 = arrAvg(fpsP10);
+      const avgFpsP25 = arrAvg(fpsP25);
+      const avgFpsP50 = arrAvg(fpsP50);
+
+      const lowestFrameTime = frameTimes[0];
+      const highestFrameTime = frameTimes[frameTimes.length - 1];
+
+      const pfps = (frameTime) => {
+        return `(${(1000 / frameTime).toFixed(2)} pFPS)`;
+      }
+
+      highestDiv1.innerHTML = `Slowest 1%: ${highestFrameTime1Percent.toFixed(0)}ms ${pfps(highestFrameTime1Percent)}`
+      highestDiv5.innerHTML = `Slowest 5%: ${highestFrameTime5Percent.toFixed(0)}ms ${pfps(highestFrameTime5Percent)}`
+      highestDiv10.innerHTML = `Slowest 10%: ${highestFrameTime10Percent.toFixed(0)}ms ${pfps(highestFrameTime10Percent)}`
+      highestDiv25.innerHTML = `Slowest 25%: ${highestFrameTime25Percent.toFixed(0)}ms ${pfps(highestFrameTime25Percent)}`
+      highestDiv50.innerHTML = `Slowest 50%: ${highestFrameTime50Percent.toFixed(0)}ms ${pfps(highestFrameTime50Percent)}`
+      averageDiv.innerHTML = `Average: ${arrAvg(frameTimes).toFixed(0)}ms`
+
+      highestFpsDiv1.innerHTML = `Slowest 1%: ${avgFpsP1.toFixed(2)}`
+      highestFpsDiv5.innerHTML = `Slowest 5%: ${avgFpsP5.toFixed(2)}`
+      highestFpsDiv10.innerHTML = `Slowest 10%: ${avgFpsP10.toFixed(2)}`
+      highestFpsDiv25.innerHTML = `Slowest 25%: ${avgFpsP25.toFixed(2)}`
+      highestFpsDiv50.innerHTML = `Slowest 50%: ${avgFpsP50.toFixed(2)}`
+      averageFpsDiv.innerHTML = `Average: ${(arrAvg(framesPerSecond)).toFixed(2)}`
+    }
+
+    // Calculate FPS
+    const fpsLoop = (timestamp) => {
+      // Get the initial timestamp as soon as we start running the app.
+      if (START_TIME == null) {
+        START_TIME = timestamp
+
+        window.requestAnimationFrame(fpsLoop);
+
+        return;
+      }
+
+      if (!stopTimer) {
+        const frameTime = timestamp - lastTimestamp;
+        frameTimes.push(frameTime);
+        lastTimestamp = timestamp;
+
+        /* fpsRunningSnapshot = Math.round(1000 / arrAvg(frameTimes)); */
+        window.requestAnimationFrame(fpsLoop);
+      }
+    }
+
+    // When the app run has fully completed
+    const shutdown = () => {
+      totalTime = lastTimestamp - START_TIME;
+      stopTimer = true;
+      totalRuntimeDiv.innerHTML = `App runtime: ${(totalTime / 1000).toFixed(2)}s`;
+
+      analyzeFPS();
+
+      billboardInfoDiv.style.backgroundColor = "lightblue";
+      billboardInfoDiv.innerHTML = "<b>TEST COMPLETE.</b> To test again clear cache and restart browser.";
+
+      startBtn.disabled = true; // Force the user to restart the browser for best results.
+    }
+
+    const main = async () => {
+      billboardInfoDiv.style.backgroundColor = "yellow";
+      billboardInfoDiv.innerHTML = "<b>TEST IN-PROGRESS.</b> DO NOT BACKGROUND THIS TAB OR INTERACT WITH MAP.";
+      /* setDefaultOptions({ css: true, version: "next" }); // default options for esri-loader. Load CSS. */
+      require([
+        "esri/Map",
+        "esri/config",
+        "esri/layers/FeatureLayer",
+        "esri/views/MapView",
+        "esri/core/reactiveUtils",
+        "esri/core/promiseUtils",
+        "esri/kernel"
+      ], function (
+        Map, esriConfig, FeatureLayer, MapView, reactiveUtils, promiseUtils, esriNS
+      ) {
+
+        let map;
+        let view;
+
+        if ("default" in Map) {
+          map = new Map.default({
+            basemap
+          });
+
+          view = new MapView.default({
+            container: "viewDiv",
+            map: map,
+            zoom: 4,
+            center: [-98, 35] // longitude, latitude
+          });
+        }
+
+        else {
+          map = new Map({
+            basemap
+          });
+
+          view = new MapView({
+            container: "viewDiv",
+            map: map,
+            zoom: 4,
+            center: [-98, 35] // longitude, latitude
+          });
+        }
+
+        view.when(async () => {
+          const resultsInfo = document.getElementById("test-results-info");
+          resultsInfo.style.display = "block";
+
+          // Display the results billboard
+          view.ui.add(resultsInfo, {
+            position: "top-right",
+            index: 2
+          });
+
+          document.getElementById("instructionsDiv").remove();
+          sdkVersion.innerHTML = `<b>SDK version:</b> ${esriNS.version}`;
+          screensizeDiv.innerHTML = `${window.innerWidth}px x ${window.innerHeight}px`;
+
+          await promiseTimerPause(5000, view);
+          window.requestAnimationFrame(fpsLoop);
+
+          // Check for min or max duty-cycle and run appropriate animation pattern
+          minRun === false ? runViewAnimationPattern(view) : minrunViewAnimationPattern(view);
+        });
+      })
+    }
+
+    // Run a series of tests. This way we have a repeatible pattern.
+    // How fast these requests complete depend on all sorts of variables
+    // Monitor map state using reactiveUtils.when()
+    // This pattern is best used with modern machines with GPU
+    const runViewAnimationPattern = async (view, pattern) => {
+      console.log("Starting view animation pattern.");
+      testStatusDiv.innerHTML = "<b>STATUS:</b> Starting test animation";
+      await view.goTo({
+        zoom: 15,
+        center: [-100, 39]
+      }, {
+        duration: VIEW_ANIMATION_PATTERN_DELAY
+      });
+      await promiseTimerPause(2500, view);
+      await view.goTo({
+        zoom: 14,
+        center: [-103, 39]
+      }, {
+        duration: VIEW_ANIMATION_PATTERN_DELAY
+      });
+      await view.goTo({
+        zoom: 8,
+        center: [-105, 39]
+      }, {
+        easing: "ease-in",
+        duration: VIEW_ANIMATION_PATTERN_DELAY
+      });
+      await view.goTo({
+        zoom: 15,
+      }, {
+        easing: "ease-in",
+        duration: VIEW_ANIMATION_PATTERN_DELAY
+      });
+      await promiseTimerPause(2500, view);
+      await view.goTo({
+        zoom: 9,
+        center: [-98, 44]
+      }, {
+        easing: "ease-in",
+        duration: VIEW_ANIMATION_PATTERN_DELAY
+      });
+      console.log("The runViewAnimationPattern has completed!");
+      testStatusDiv.innerHTML = "<b>STATUS:</b> Animation pattern complete";
+
+      await promiseTimerPause(2000, view);
+      shutdown();
+    }
+
+    // This pattern is best used with virtual machines with no GPU
+    const minrunViewAnimationPattern = async (view, pattern) => {
+      console.log("Starting view animation pattern.");
+
+      for (let i = 0; i < 3; i++) {
+        await view.goTo({
+          zoom: 10,
+          center: [-98, 35]
+        }, {
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 11,
+          center: [-99, 35]
+        }, {
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 9,
+          center: [-100, 35]
+        }, {
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 7,
+          center: [-100, 39]
+        }, {
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 15,
+          center: [-100, 39]
+        }, {
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 14,
+          center: [-103, 39]
+        }, {
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 8,
+          center: [-105, 39]
+        }, {
+          easing: "ease-in",
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 15,
+        }, {
+          easing: "ease-in",
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+        await view.goTo({
+          zoom: 9,
+          center: [-98, 44]
+        }, {
+          easing: "ease-in",
+          duration: MIN_VIEW_ANIMATION_PATTERN_DELAY
+        });
+      }
+
+      console.log("The minRunViewAnimationPattern has completed!");
+      testStatusDiv.innerHTML = "<b>STATUS:</b> Animation pattern complete";
+
+      /* await promiseTimerPause(2000, view); */
+      shutdown();
+    }
+
+    // Return a promise after the specified interval
+    const promiseTimerPause = (interval, view) => {
+      console.log("Pausing...")
+      return new Promise(resolve => {
+        const t = (interval) => {
+          setTimeout(() => {
+            console.log("Pause complete.");
+            if (!view.interacting) {
+              // Depending on how slow the machine is
+              // there could be a lot of lag time for the map
+              // interaction to settle.
+              console.log("Map interacting is false.");
+              resolve();
+            }
+            else {
+              console.log("Map is still active.");
+            }
+          }, interval);
+        }
+        t(interval);
+      });
+    };
+
+    const checkForBrowserResize = () => {
+      const displayWindowSize = () => {
+        let mapWidth = window.innerWidth;
+        let mapHeight = window.innerHeight;
+        document.getElementById("browser-size").innerHTML = mapWidth + "px x " + mapHeight + "px";
+      };
+
+      window.onresize = displayWindowSize;
+      window.onload = displayWindowSize;      
+    }    
+    checkForBrowserResize();
+  </script>
+</head>
+
+<body>
+  <div>
+    <!-- raster basemap info: https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServers -->
+    <select class="action-select" id="basemap-select">
+      <option value="vector" selected="selected">Vector</option>
+      <option value="raster">Raster</option>
+    </select>
+    <select class="action-select" id="duty-cycle-select">
+      <option value="min" selected="selected">Min</option>
+      <option value="max">Max</option>
+    </select>
+    <button class="action-btn" id="start-btn">Start</button>
+    <div id="billboard-info">DURING TEST - DO NOT BACKGROUND THIS TAB</div>
+  </div>
+  <div id="viewDiv"></div>
+  <div id="test-results-info" class="esri-widget">
+    <h3>Final results</h3>
+    <div id="screen-size"></div>
+    <div id="sdk-version"><b>SDK version:</b> --</div>
+    <div id="test-status"><b>Status:</b> pending...</div>
+    <br>
+    <div>Frametime</div>
+    <div id="frame-highest1">Slowest 01%: pending...</div>
+    <div id="frame-highest5">Slowest 05%: pending...</div>
+    <div id="frame-highest10">Slowest 10%: pending...</div>
+    <div id="frame-highest25">Slowest 25%: pending...</div>
+    <div id="frame-highest50">Slowest 50%: pending...</div>
+    <div id="frame-avg">Average: pending...</div>
+    <br>
+    <div>FPS (~1 second bins)</div>
+    <div id="fps-highest1">Slowest 01%: pending...</div>
+    <div id="fps-highest5">Slowest 05%: pending...</div>
+    <div id="fps-highest10">Slowest 10%: pending...</div>
+    <div id="fps-highest25">Slowest 25%: pending...</div>
+    <div id="fps-highest50">Slowest 50%: pending...</div>
+    <div id="fps-avg">Average: pending...</div>
+    <br>
+    <div id="runtime-total">App runtime: pending...</div>
+  </div>
+  <div id="instructionsDiv">
+    <h3>Instructions for best testing results</h3>
+    <p>1. Close all other tabs and applications, including dev console.</p>
+    <p>2. Clear browser cache</p>
+    <p>3. Maximize browser to full window width and height. Or use a consistent size: <span id="browser-size"></span></p>
+    <p>4. Select Raster or Vector basemap.</p>
+    <p>5. Select Min or Max duty cycle, then click Start.</p>
+    <ul>
+      <li><b>Min</b> provides minimal zooming and panning.</li>
+      <li><b>Max</b> provides maximum zooming and panning</li>
+      <li><b>Min</b> is best used with VMs provisioned with minimum vCPUs and no GPU.</li>
+      <li><b>Max</b> is best used with VMs or laptops with a GPU.</li>
+    </ul>
+    <p>5. When the test is finished, write down the results.</p>
+    <p>6. Clear browser cache.</p>
+    <p>7. Repeat these tests multiple times and take the average.</p>
+  </div>
+</body>
+
+</html>
+<!-- partial -->
+  
+</body>
+</html>
